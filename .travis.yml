@@ -1,0 +1,15 @@
+language: go
+
+go:
+  - 1.6
+  - tip
+
+install:
+  - go get -v github.com/govend/govend
+  - govend -v
+
+# The default script is go test -v ./... which will test everything in the vendor directory.
+# Only testing this project.
+script:
+  - go test -v .
+  - go test . -run Test_Collector_WriteVsProcessVsCollect -race -count 100 -cpu 1,2,4,8,16
