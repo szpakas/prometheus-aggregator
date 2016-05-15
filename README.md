@@ -1,5 +1,4 @@
-# Prometheus aggregator
-[![Apache 2.0 License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://github.com/szpakas/prometheus_aggregator/blob/master/LICENSE)
+# Prometheus aggregator [![Apache 2.0 License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://github.com/szpakas/prometheus_aggregator/blob/master/LICENSE) [![Go Report Card](https://goreportcard.com/badge/github.com/szpakas/prometheus_aggregator)](https://goreportcard.com/report/github.com/szpakas/prometheus_aggregator)
 
 `prometheus_aggregator` receives prometheus style samples, aggregates them and than exposes as prometheus metrics.
 
