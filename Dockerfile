@@ -2,6 +2,6 @@ FROM golang:1-onbuild
 MAINTAINER Adam Szpakowski <adam@szpakowski.info>
 
 # ingress: samples via UDP
-EXPOSE 9991
+EXPOSE 8080/udp
 # egress: metrics for prometheus to scrape
-EXPOSE 8080
+EXPOSE 9090
