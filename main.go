@@ -16,7 +16,7 @@ const (
 	ConfigAppPrefix = "APP"
 )
 
-type Config struct {
+type config struct {
 	// UdpHost is address on which UDP server is listening
 	UDPHost string `envconfig:"default=0.0.0.0"`
 
@@ -41,7 +41,7 @@ type Config struct {
 
 func main() {
 	// -> config from env
-	cfg := &Config{}
+	cfg := &config{}
 	if err := envconfig.InitWithPrefix(&cfg, ConfigAppPrefix); err != nil {
 		exitOnFatal(err, "init config")
 	}

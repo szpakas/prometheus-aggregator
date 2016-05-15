@@ -94,13 +94,13 @@ func Test_Collector_Write_ChannelFull(t *testing.T) {
 	}
 }
 
-func helper_CollectorProcessPopulate(c *collector, samples []*sample) {
+func hCollectorProcessPopulate(c *collector, samples []*sample) {
 	for _, s := range samples {
 		c.ingressCh <- s
 	}
 }
 
-func helper_CollectorProcessSynchronise(t *testing.T, c *collector) {
+func hCollectorProcessSynchronise(t *testing.T, c *collector) {
 	c.shutdownTimeout = time.Millisecond * 100
 	sampleProcessingDoneCh := make(chan struct{})
 
@@ -139,8 +139,8 @@ inProcessing:
 
 func Test_Collector_Process_Success_NewHashes(t *testing.T) {
 	c := newCollector()
-	helper_CollectorProcessPopulate(c, collectorSamples)
-	helper_CollectorProcessSynchronise(t, c)
+	hCollectorProcessPopulate(c, collectorSamples)
+	hCollectorProcessSynchronise(t, c)
 
 	// check if the samples are converted to metrics
 	var hashesGot []string
@@ -164,9 +164,9 @@ func Test_Collector_Process_Success_NewHashes(t *testing.T) {
 func Test_Collector_Process_Success_Existing(t *testing.T) {
 	c := newCollector()
 	// duplicate to simulate adding existing samples
-	helper_CollectorProcessPopulate(c, collectorSamples)
-	helper_CollectorProcessPopulate(c, collectorSamples)
-	helper_CollectorProcessSynchronise(t, c)
+	hCollectorProcessPopulate(c, collectorSamples)
+	hCollectorProcessPopulate(c, collectorSamples)
+	hCollectorProcessSynchronise(t, c)
 
 	// check if the samples are converted to metrics
 	var hashesGot []string
@@ -190,10 +190,10 @@ func Test_Collector_Process_Success_Existing(t *testing.T) {
 func Test_Collector_Process_Success_Values(t *testing.T) {
 	c := newCollector()
 	// duplicate to simulate adding existing samples
-	helper_CollectorProcessPopulate(c, collectorSamples)
-	helper_CollectorProcessPopulate(c, collectorSamples)
-	helper_CollectorProcessPopulate(c, collectorSamples)
-	helper_CollectorProcessSynchronise(t, c)
+	hCollectorProcessPopulate(c, collectorSamples)
+	hCollectorProcessPopulate(c, collectorSamples)
+	hCollectorProcessPopulate(c, collectorSamples)
+	hCollectorProcessSynchronise(t, c)
 
 	for _, s := range collectorSamples {
 		var mm dto.Metric
@@ -226,7 +226,7 @@ func Test_Collector_Process_Success_HistogramLinear(t *testing.T) {
 	c.ingressCh <- &s1
 	c.ingressCh <- &s2
 
-	helper_CollectorProcessSynchronise(t, c)
+	hCollectorProcessSynchronise(t, c)
 
 	var mm dto.Metric
 	m := c.histograms[string(s1.hash())]

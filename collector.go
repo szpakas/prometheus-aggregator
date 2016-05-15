@@ -17,6 +17,9 @@ const (
 )
 
 var (
+	// ErrIngressQueueFull is returned when ingress queue for samples is full.
+	// Sample is not queued in such case.
+	// Optional retries should be handled on caller side.
 	ErrIngressQueueFull = errors.New("collector: ingress queue is full")
 
 	appStartTimestampMetric = prometheus.NewGauge(

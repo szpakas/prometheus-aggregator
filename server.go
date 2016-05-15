@@ -48,8 +48,6 @@ func (s *server) Listen(ip string, port int) error {
 				_ = s.sampleHandler(sample)
 			}
 		}
-
-		conn.Close()
 	}()
 
 	return nil
