@@ -5,6 +5,7 @@
 coverage.out
 /main
 /prometheus-aggregator
+/tmp/
 
 ### OSX template
 .DS_Store

@@ -21,7 +21,7 @@ func Test_Collector_New(t *testing.T) {
 	a.NotNil(t, c.histograms)
 }
 
-var collectorSamples = []*sample{
+var tfCollectorSamples = []*sample{
 	{
 		name: "name_of_1_metric_total", kind: sampleCounter,
 		labels: map[string]string{"service": "srvA1", "host": "hostA", "phpVersion": "5.6", "labelA": "labelValueA", "label2": "labelValue2"},
@@ -56,14 +56,14 @@ var collectorSamples = []*sample{
 
 func Test_Collector_Write_Success(t *testing.T) {
 	c := newCollector()
-	for _, s := range collectorSamples {
+	for _, s := range tfCollectorSamples {
 		c.Write(s)
 	}
-	if !a.Len(t, c.ingressCh, len(collectorSamples)) {
+	if !a.Len(t, c.ingressCh, len(tfCollectorSamples)) {
 		t.FailNow()
 	}
-	for i := 0; i < len(collectorSamples); i++ {
-		a.Equal(t, collectorSamples[i], <-c.ingressCh)
+	for i := 0; i < len(tfCollectorSamples); i++ {
+		a.Equal(t, tfCollectorSamples[i], <-c.ingressCh)
 	}
 }
 
@@ -72,9 +72,9 @@ func Test_Collector_Write_ChannelFull(t *testing.T) {
 	// size of buffer is smaller than number of samples to store
 	bufLen := 2
 	c.ingressCh = make(chan *sample, bufLen)
-	errGot := make(chan error, len(collectorSamples))
+	errGot := make(chan error, len(tfCollectorSamples))
 
-	for _, s := range collectorSamples {
+	for _, s := range tfCollectorSamples {
 		errGot <- c.Write(s)
 	}
 
@@ -84,23 +84,31 @@ func Test_Collector_Write_ChannelFull(t *testing.T) {
 
 	// check on calls which should add samples to buffer
 	for i := 0; i < bufLen; i++ {
-		a.Equal(t, collectorSamples[i], <-c.ingressCh)
+		a.Equal(t, tfCollectorSamples[i], <-c.ingressCh)
 		a.Nil(t, <-errGot)
 	}
 
 	// check on calls which should result in errors
-	for i := bufLen; i < len(collectorSamples); i++ {
+	for i := bufLen; i < len(tfCollectorSamples); i++ {
 		a.Equal(t, ErrIngressQueueFull, <-errGot)
 	}
 }
 
-func hCollectorProcessPopulate(c *collector, samples []*sample) {
+func thInitSampleHasher(h sampleHasherFunc) func() {
+	sampleHasherOld := sampleHasher
+	sampleHasher = h
+	return func() {
+		sampleHasher = sampleHasherOld
+	}
+}
+
+func thCollectorProcessPopulate(c *collector, samples []*sample) {
 	for _, s := range samples {
 		c.ingressCh <- s
 	}
 }
 
-func hCollectorProcessSynchronise(t *testing.T, c *collector) {
+func thCollectorProcessSynchronise(t *testing.T, c *collector) {
 	c.shutdownTimeout = time.Millisecond * 100
 	sampleProcessingDoneCh := make(chan struct{})
 
@@ -138,35 +146,52 @@ inProcessing:
 }
 
 func Test_Collector_Process_Success_NewHashes(t *testing.T) {
-	c := newCollector()
-	hCollectorProcessPopulate(c, collectorSamples)
-	hCollectorProcessSynchronise(t, c)
-
-	// check if the samples are converted to metrics
-	var hashesGot []string
-	for h := range c.counters {
-		hashesGot = append(hashesGot, h)
+	tests := map[string]struct {
+		h sampleHasherFunc
+	}{
+		"md5":  {hashMD5},
+		"prom": {hashProm},
 	}
-	for h := range c.gauges {
-		hashesGot = append(hashesGot, h)
-	}
-	sort.Strings(hashesGot)
 
-	var hashesExp []string
-	for _, s := range collectorSamples {
-		hashesExp = append(hashesExp, string(s.hash()))
-	}
-	sort.Strings(hashesExp)
+	sampleHasherOld := sampleHasher
+	defer func() {
+		sampleHasher = sampleHasherOld
+	}()
 
-	a.Equal(t, hashesExp, hashesGot)
+	for sym, tc := range tests {
+		sampleHasher = tc.h
+
+		c := newCollector()
+		thCollectorProcessPopulate(c, tfCollectorSamples)
+		thCollectorProcessSynchronise(t, c)
+
+		// check if the samples are converted to metrics
+		var hashesGot []string
+		for h := range c.counters {
+			hashesGot = append(hashesGot, h)
+		}
+		for h := range c.gauges {
+			hashesGot = append(hashesGot, h)
+		}
+		sort.Strings(hashesGot)
+
+		var hashesExp []string
+		for _, s := range tfCollectorSamples {
+			hashesExp = append(hashesExp, string(s.hash()))
+		}
+		sort.Strings(hashesExp)
+
+		a.Equal(t, hashesExp, hashesGot, sym)
+	}
 }
 
 func Test_Collector_Process_Success_Existing(t *testing.T) {
+	defer thInitSampleHasher(hashMD5)()
 	c := newCollector()
 	// duplicate to simulate adding existing samples
-	hCollectorProcessPopulate(c, collectorSamples)
-	hCollectorProcessPopulate(c, collectorSamples)
-	hCollectorProcessSynchronise(t, c)
+	thCollectorProcessPopulate(c, tfCollectorSamples)
+	thCollectorProcessPopulate(c, tfCollectorSamples)
+	thCollectorProcessSynchronise(t, c)
 
 	// check if the samples are converted to metrics
 	var hashesGot []string
@@ -179,7 +204,7 @@ func Test_Collector_Process_Success_Existing(t *testing.T) {
 	sort.Strings(hashesGot)
 
 	var hashesExp []string
-	for _, s := range collectorSamples {
+	for _, s := range tfCollectorSamples {
 		hashesExp = append(hashesExp, string(s.hash()))
 	}
 	sort.Strings(hashesExp)
@@ -188,14 +213,15 @@ func Test_Collector_Process_Success_Existing(t *testing.T) {
 }
 
 func Test_Collector_Process_Success_Values(t *testing.T) {
+	defer thInitSampleHasher(hashMD5)()
 	c := newCollector()
 	// duplicate to simulate adding existing samples
-	hCollectorProcessPopulate(c, collectorSamples)
-	hCollectorProcessPopulate(c, collectorSamples)
-	hCollectorProcessPopulate(c, collectorSamples)
-	hCollectorProcessSynchronise(t, c)
+	thCollectorProcessPopulate(c, tfCollectorSamples)
+	thCollectorProcessPopulate(c, tfCollectorSamples)
+	thCollectorProcessPopulate(c, tfCollectorSamples)
+	thCollectorProcessSynchronise(t, c)
 
-	for _, s := range collectorSamples {
+	for _, s := range tfCollectorSamples {
 		var mm dto.Metric
 		switch s.kind {
 		case sampleCounter:
@@ -222,11 +248,12 @@ func Test_Collector_Process_Success_HistogramLinear(t *testing.T) {
 	s1.value = 10
 	s2.value = 20
 
+	defer thInitSampleHasher(hashMD5)()
 	c := newCollector()
 	c.ingressCh <- &s1
 	c.ingressCh <- &s2
 
-	hCollectorProcessSynchronise(t, c)
+	thCollectorProcessSynchronise(t, c)
 
 	var mm dto.Metric
 	m := c.histograms[string(s1.hash())]
@@ -248,15 +275,15 @@ func Test_Collector_Collect_NoMetric(t *testing.T) {
 	metricCh := make(chan prometheus.Metric, 2048)
 	c.Collect(metricCh)
 
-	if !a.Len(t, metricCh, 2) {
+	if !a.Len(t, metricCh, 3) {
 		t.FailNow()
 	}
 
 	mA := <-metricCh
-	a.Equal(t, appStartTimestampMetric.Desc(), mA.Desc())
+	a.Equal(t, c.metricAppStart.Desc(), mA.Desc())
 
 	mB := <-metricCh
-	a.Equal(t, appDurationSecondsMetric.Desc(), mB.Desc())
+	a.Equal(t, c.metricAppDuration.Desc(), mB.Desc())
 }
 
 func Test_Collector_Collect_MetricFromSamples(t *testing.T) {
@@ -282,8 +309,9 @@ func Test_Collector_Collect_MetricFromSamples(t *testing.T) {
 	addDesc(expDescMap, c.gauges["g1"])
 	addDesc(expDescMap, c.gauges["g2"])
 	addDesc(expDescMap, c.histograms["hl1"])
-	addDesc(expDescMap, appStartTimestampMetric)
-	addDesc(expDescMap, appDurationSecondsMetric)
+	addDesc(expDescMap, c.metricAppStart)
+	addDesc(expDescMap, c.metricAppDuration)
+	addDesc(expDescMap, c.metricQueueLength)
 
 	metricCh := make(chan prometheus.Metric, 2048)
 

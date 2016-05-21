@@ -11,6 +11,8 @@
 /main
 /prometheus-aggregator
 
+/tmp/
+
 # default binary when developing (be careful to only match binaries and not command dir)
 /clientsqs
 /import

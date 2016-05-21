@@ -4,8 +4,10 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"runtime"
 	"syscall"
 
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/log"
 	"github.com/vrischmann/envconfig"
@@ -37,6 +39,15 @@ type config struct {
 	// LogLevel is a minimal log severity required for the message to be logged.
 	// Valid levels: [debug, info, warn, error, fatal, panic].
 	LogLevel string `envconfig:"default=info"`
+
+	// MaxProcs limits number of processors used by the app.
+	MaxProcs int `envconfig:"default=0"`
+
+	// SampleHasher sets hashing function used with samples.
+	// Valid values:
+	// - prom: hasher based on prometheus implementation of FNV-1a hash
+	// - md5: naive MD5 implementation
+	SampleHasher string `envconfig:"default=prom"`
 }
 
 func main() {
@@ -52,6 +63,21 @@ func main() {
 
 	log.Debugf("Parsed config from env => %+v", *cfg)
 
+	if cfg.MaxProcs != 0 {
+		nGot := runtime.GOMAXPROCS(cfg.MaxProcs)
+		log.Debugf("Processor limiting, Req: %d, MaxAvailable: %d, NumCPU: %d", cfg.MaxProcs, nGot, runtime.NumCPU())
+	}
+
+	switch cfg.SampleHasher {
+	case "prom":
+		sampleHasher = hashProm
+	case "md5":
+		sampleHasher = hashMD5
+	default:
+		exitOnFatal(errors.New("unknown hashing implementation"), "sampleHasher selection")
+	}
+	log.Debugf("Sample hasher used: %s", cfg.SampleHasher)
+
 	// TODO(szpakas): attach to signals for graceful shutdown and call c.stop()
 	c := newCollector()
 	prometheus.MustRegister(c)
@@ -64,6 +90,8 @@ func main() {
 	}
 
 	http.Handle("/metrics", prometheus.Handler())
+
+	//prometheus.EnableCollectChecks(true)
 
 	metricsListenOn := fmt.Sprintf("%s:%d", cfg.MetricsHost, cfg.MetricsPort)
 	log.Infof("Starting metrics server => %s", metricsListenOn)

@@ -13,7 +13,7 @@ import (
 
 const (
 	// TODO(szpakas): move to config
-	ingressQueueSize = 2048
+	ingressQueueSize = 1024 * 100
 )
 
 var (
@@ -21,19 +21,6 @@ var (
 	// Sample is not queued in such case.
 	// Optional retries should be handled on caller side.
 	ErrIngressQueueFull = errors.New("collector: ingress queue is full")
-
-	appStartTimestampMetric = prometheus.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "app_start_timestamp_seconds",
-			Help: "Unix timestamp of the app collector start.",
-		},
-	)
-	appDurationSecondsMetric = prometheus.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "app_duration_seconds",
-			Help: "Time in seconds since start of the app.",
-		},
-	)
 )
 
 type collector struct {
@@ -63,6 +50,11 @@ type collector struct {
 	// shutdownDownCh is used to signal when shutdown is done
 	shutdownDownCh  chan struct{}
 	shutdownTimeout time.Duration
+
+	metricAppStart           prometheus.Gauge
+	metricAppDuration        prometheus.Gauge
+	metricQueueLength        prometheus.Gauge
+	metricProcessingDuration *prometheus.SummaryVec
 }
 
 func newCollector() *collector {
@@ -75,15 +67,46 @@ func newCollector() *collector {
 		quitCh:          make(chan struct{}),
 		shutdownDownCh:  make(chan struct{}),
 		shutdownTimeout: time.Second,
+
+		metricAppStart: prometheus.NewGauge(
+			prometheus.GaugeOpts{
+				Name: "app_start_timestamp_seconds",
+				Help: "Unix timestamp of the app collector start.",
+			},
+		),
+		metricAppDuration: prometheus.NewGauge(
+			prometheus.GaugeOpts{
+				Name: "app_duration_seconds",
+				Help: "Time in seconds since start of the app.",
+			},
+		),
+
+		metricQueueLength: prometheus.NewGauge(
+			prometheus.GaugeOpts{
+				Name: "app_collector_queue_length",
+				Help: "Number of elements waiting in collector queue for processing.",
+			},
+		),
+
+		metricProcessingDuration: prometheus.NewSummaryVec(
+			prometheus.SummaryOpts{
+				Name: "app_collector_processing_duration_ns",
+				Help: "Duration of the processing in the collector in ns.",
+			},
+			[]string{"sampleKind"},
+		),
 	}
 }
 
 // Collect implements prometheus.Collector.
 func (c *collector) Collect(ch chan<- prometheus.Metric) {
-	appStartTimestampMetric.Collect(ch)
+	c.metricAppStart.Collect(ch)
 
-	appDurationSecondsMetric.Set(time.Now().Sub(c.startTime).Seconds())
-	appDurationSecondsMetric.Collect(ch)
+	c.metricAppDuration.Set(time.Now().Sub(c.startTime).Seconds())
+	c.metricAppDuration.Collect(ch)
+
+	c.metricQueueLength.Collect(ch)
+	c.metricProcessingDuration.Collect(ch)
 
 	c.countersMu.RLock()
 	for _, m := range c.counters {
@@ -106,14 +129,16 @@ func (c *collector) Collect(ch chan<- prometheus.Metric) {
 
 // Describe implements prometheus.Collector.
 func (c *collector) Describe(ch chan<- *prometheus.Desc) {
-	appStartTimestampMetric.Describe(ch)
-	appDurationSecondsMetric.Describe(ch)
+	c.metricAppStart.Describe(ch)
+	c.metricAppDuration.Describe(ch)
+	c.metricQueueLength.Describe(ch)
+	c.metricProcessingDuration.Describe(ch)
 }
 
 func (c *collector) start() {
 	c.startTime = time.Now()
 
-	appStartTimestampMetric.Set(float64(c.startTime.UnixNano()) / 1e9)
+	c.metricAppStart.Set(float64(c.startTime.UnixNano()) / 1e9)
 
 	go c.process()
 }
@@ -142,18 +167,25 @@ func (c *collector) Write(s *sample) error {
 	return nil
 }
 
+// process is responsible from converting samples to metrics and persisting in storage (in-memory)
+// Function is run in a separate goroutine. There is always single instance of this function running.
 func (c *collector) process() {
 	var (
-		s *sample
-		h []byte
+		s  *sample
+		h  []byte
+		tS time.Time
 	)
 	for {
 		select {
 		case s = <-c.ingressCh:
+			tS = time.Now()
+			c.metricQueueLength.Set(float64(len(c.ingressCh)))
+
 			h = s.hash()
 
 			switch s.kind {
 			case sampleCounter:
+				// race avoidance is not needed on existence check as "process" is the only one modifying storage
 				m, found := c.counters[string(h)]
 				if !found {
 					m = prometheus.NewCounter(
@@ -210,6 +242,9 @@ func (c *collector) process() {
 			}
 
 			c.testHookProcessSampleDone()
+
+			c.metricProcessingDuration.WithLabelValues(string(s.kind)).
+				Observe(float64(time.Since(tS).Nanoseconds()))
 
 		case <-c.quitCh:
 			close(c.shutdownDownCh)

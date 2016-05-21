@@ -1,9 +1,9 @@
 package main
 
-import (
-	"crypto/md5"
-	"sort"
-)
+type sampleHasherFunc func(*sample) []byte
+
+// sampleHasher is a hashing function used on samples.
+var sampleHasher sampleHasherFunc
 
 type sampleKind string
 
@@ -21,7 +21,8 @@ const (
 	sampleHistogramLinear sampleKind = "hl"
 )
 
-// sample represents single sample
+// sample represents single measurement submitted to the system.
+// Samples are converted to metrics by collector.
 type sample struct {
 	// name is used to represent sample. It's used as metric name in export to prometheus.
 	name string
@@ -42,36 +43,5 @@ type sample struct {
 // hash calculates a hash of the sample so it can be recognized.
 // Should take all elements other than value under consideration.
 func (s *sample) hash() []byte {
-	// TODO(szpakas): switch to non-cryptographic hash function like FNV or xxHash
-	// TODO(szpakas): hash histogramDef
-	hash := md5.New()
-
-	hash.Write([]byte(s.kind))
-	hash.Write([]byte("|"))
-
-	hash.Write([]byte(s.name))
-
-	// labels
-	if len(s.labels) > 0 {
-		hash.Write([]byte("|"))
-
-		// get all keys sorted so hash is repeatable
-		var keys []string
-		for k := range s.labels {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-
-		for i, k := range keys {
-			hash.Write([]byte(k))
-			hash.Write([]byte("="))
-			hash.Write([]byte(s.labels[k]))
-			// separator between labels
-			if i < len(keys)-1 {
-				hash.Write([]byte(";"))
-			}
-		}
-	}
-
-	return hash.Sum([]byte{})
+	return sampleHasher(s)
 }

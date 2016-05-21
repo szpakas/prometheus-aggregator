@@ -13,8 +13,11 @@ import (
 
 // Test_Collector_ProcessVsCollect checks against the race between write, process and collect/describe.
 // Test with:
-//   go test ./ -run Test_Collector_WriteVsProcessVsCollect -race -count 1000 -cpu 1,2,4,8,16
+//   go test ./ -run Test_Race_Collector_WriteVsProcessVsCollect -race -count 1000 -cpu 1,2,4,8,16
 func Test_Race_Collector_WriteVsProcessVsCollect(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping race test")
+	}
 	samples := []*sample{
 		{
 			name: "name_of_2_metric_total", kind: sampleCounter,
@@ -34,6 +37,7 @@ func Test_Race_Collector_WriteVsProcessVsCollect(t *testing.T) {
 		},
 	}
 
+	defer thInitSampleHasher(hashMD5)()
 	c := newCollector()
 	c.shutdownTimeout = time.Millisecond * 100
 
@@ -58,7 +62,7 @@ func Test_Race_Collector_WriteVsProcessVsCollect(t *testing.T) {
 
 	go func() {
 		for i := 0; i < 100; i++ {
-			descCh := make(chan *prometheus.Desc, 2) // only 2 descriptions are used
+			descCh := make(chan *prometheus.Desc, 100) // should be bigger than number of metrics described
 			c.Describe(descCh)
 			metricCh := make(chan prometheus.Metric, 100) // channel need enough capacity to get all metrics
 			c.Collect(metricCh)

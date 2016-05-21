@@ -1,4 +1,4 @@
-# Prometheus aggregator [![Build Status](https://travis-ci.org/szpakas/prometheus-aggregator.svg)](https://travis-ci.org/szpakas/prometheus-aggregator)
+# Prometheus aggregator [![Build Status](https://travis-ci.org/szpakas/prometheus-aggregator.svg?branch=master)](https://travis-ci.org/szpakas/prometheus-aggregator)
 
 [![Apache 2.0 License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://github.com/szpakas/prometheus-aggregator/blob/master/LICENSE) [![Go Report Card](https://goreportcard.com/badge/github.com/szpakas/prometheus-aggregator)](https://goreportcard.com/report/github.com/szpakas/prometheus-aggregator)
 
@@ -74,16 +74,18 @@ Type config values are passed to LinearBuckets(start, width float64, count int)
     name_of_1_metric_seconds|hl|3.3;2.0;5|12.345
     name_of_1_metric_seconds|hl|3.3;2.0;5|labelA=labelValueA;label2=labelValue2|12.345
 
-## Internal architecture
+## Internals
+
+### Architecture
 
 There are two major components: sample server and collector.
 
-### Sample server
+#### Sample server
 
 Sample server is responsible for listening for the incoming samples via UDP, parsing each packet to samples and handing over to collector for processing.
 As of now there is single goroutine responsible for reading and parsing.
 
-### Collector
+#### Collector
 
 Collector is responsible for:
 - processing of the samples to metrics metrics,
@@ -94,6 +96,18 @@ Collector implements prometheus.Collector interface.
 
 New samples are buffered in ingress channel and then picked-up by a processor, converted to metrics and stored.
 Processor is implemented as single goroutine.
+
+### Metrics
+
+| name | module | type | unit | desc |
+|------|--------|------|------|------|
+| app_start_timestamp_seconds | collector | gauge | second | Unix timestamp of the app collector start. |
+| app_duration_seconds | collector | gauge | second | Time in seconds since start of the app. |
+| app_collector_queue_length | collector | gauge | - | Number of elements waiting in collector queue for processing. |
+| app_collector_processing_duration_ns | collector | summary | nanosecond | Duration of the processing in the collector in ns. |
+| app_ingress_requests_total | server | counter | - | Number of request entering server. |
+| app_ingress_samples_total | server | counter | - | Number of samples entering server. |
+| app_ingress_request_handling_duration_ns | server | summary | nanosecond | Time in ns spent on handling single request. |
 
 ## Usage
 

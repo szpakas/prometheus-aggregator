@@ -8,6 +8,7 @@ import (
 )
 
 func Test_Sample_Hash_MD5(t *testing.T) {
+	// TODO(szpakas): add gauges and histograms
 	testCases := map[string]struct {
 		s  sample
 		hD []byte
@@ -41,6 +42,6 @@ func Test_Sample_Hash_MD5(t *testing.T) {
 	for k, tC := range testCases {
 		h := md5.New()
 		h.Write(tC.hD)
-		a.Equal(t, h.Sum([]byte{}), tC.s.hash(), "[%s] hash creation mismatch", k)
+		a.Equal(t, h.Sum([]byte{}), hashMD5(&tC.s), "[%s] hash creation mismatch", k)
 	}
 }

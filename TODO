@@ -1,0 +1,7 @@
+- Eliminate unbound memory usage by metrics (LRU?).
+- Add internal metrics to server and collector.
+- Allow for setting processor affinity.
+- Add benchmarks on methods.
+- Re-implement hash for metrics.
+- Remove metric as last step of collect.
+- Fix data race on switching sampleHasher in tests. Re-enable race test on Travis.
